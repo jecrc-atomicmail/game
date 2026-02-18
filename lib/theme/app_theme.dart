@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   static ThemeData get premiumTheme {
@@ -11,9 +10,13 @@ class AppTheme {
         secondary: Color(0xFF5B6BFF),
         surface: Color(0xFF10142A),
       ),
-      textTheme: GoogleFonts.poppinsTextTheme(base.textTheme).copyWith(
-        headlineLarge: GoogleFonts.bebasNeue(
-            fontSize: 52, letterSpacing: 2, color: Colors.white),
+      textTheme: base.textTheme.copyWith(
+        headlineLarge: const TextStyle(
+          fontSize: 52,
+          letterSpacing: 2,
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
         titleLarge:
             const TextStyle(fontWeight: FontWeight.w600, color: Colors.white),
         bodyMedium: const TextStyle(color: Colors.white70),

@@ -44,7 +44,7 @@ class GameResult {
 
   String get subtitle {
     if (outcome == GameOutcome.win) {
-      return 'Perfect timing! Opponent didn’t see that coming.';
+      return 'Perfect timing! Opponent did not see that coming.';
     }
     if (outcome == GameOutcome.lose) {
       return 'Close call. Reset and try again.';
@@ -55,13 +55,21 @@ class GameResult {
   factory GameResult.fromPayload(Map<String, dynamic> payload) {
     return GameResult(
       playerMove: GameMove.values.firstWhere(
-          (move) => move.label.toLowerCase() == payload['playerMove']?.toString().toLowerCase(),
-          orElse: () => GameMove.stone),
+        (move) =>
+            move.label.toLowerCase() ==
+            payload['playerMove']?.toString().toLowerCase(),
+        orElse: () => GameMove.stone,
+      ),
       opponentMove: GameMove.values.firstWhere(
-          (move) => move.label.toLowerCase() == payload['opponentMove']?.toString().toLowerCase(),
-          orElse: () => GameMove.paper),
-      outcome: _outcomeFromString(payload['outcome']),
-      occurredAt: DateTime.tryParse(payload['timestamp']?.toString() ?? '') ?? DateTime.now(),
+        (move) =>
+            move.label.toLowerCase() ==
+            payload['opponentMove']?.toString().toLowerCase(),
+        orElse: () => GameMove.paper,
+      ),
+      outcome: _outcomeFromString(payload['outcome']?.toString()),
+      occurredAt:
+          DateTime.tryParse(payload['timestamp']?.toString() ?? '') ??
+              DateTime.now(),
       arena: payload['arena']?.toString() ?? 'Online Arena',
     );
   }
@@ -71,9 +79,11 @@ class GameResult {
     switch (raw.toLowerCase()) {
       case 'win':
       case 'you win':
+      case 'victory':
         return GameOutcome.win;
       case 'lose':
       case 'you lose':
+      case 'defeat':
         return GameOutcome.lose;
       default:
         return GameOutcome.draw;

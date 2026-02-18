@@ -1,9 +1,9 @@
-import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:game/config/env.dart';
 import 'package:game/models/game_move.dart';
 import 'package:game/models/game_result.dart';
 
@@ -52,9 +52,10 @@ class OfflineGameNotifier extends StateNotifier<OfflineGameState> {
 
   void selectMove(GameMove playerMove) {
     if (state.busy) return;
-    final opponentMove = GameMove.values[_random.nextInt(GameMove.values.length)];
-    final outcome = determineOutcome(playerMove, opponentMove);
 
+    final opponentMove =
+        GameMove.values[_random.nextInt(GameMove.values.length)];
+    final outcome = determineOutcome(playerMove, opponentMove);
     final result = GameResult(
       playerMove: playerMove,
       opponentMove: opponentMove,
@@ -66,7 +67,8 @@ class OfflineGameNotifier extends StateNotifier<OfflineGameState> {
     state = state.copyWith(
       lastResult: result,
       playerScore: state.playerScore + (outcome == GameOutcome.win ? 1 : 0),
-      opponentScore: state.opponentScore + (outcome == GameOutcome.lose ? 1 : 0),
+      opponentScore:
+          state.opponentScore + (outcome == GameOutcome.lose ? 1 : 0),
       busy: true,
     );
 
@@ -77,7 +79,6 @@ class OfflineGameNotifier extends StateNotifier<OfflineGameState> {
       state = state.copyWith(busy: false);
     });
   }
-
 }
 
 class OnlineMatchState {
@@ -127,11 +128,21 @@ class OnlineMatchState {
 
 final offlineGameProvider =
     StateNotifierProvider<OfflineGameNotifier, OfflineGameState>(
-        (ref) => OfflineGameNotifier(ref));
+  (ref) => OfflineGameNotifier(ref),
+);
+
+SupabaseClient? _safeSupabaseClient() {
+  try {
+    return Supabase.instance.client;
+  } catch (_) {
+    return null;
+  }
+}
 
 final onlineMatchProvider =
     StateNotifierProvider<OnlineMatchNotifier, OnlineMatchState>(
-        (ref) => OnlineMatchNotifier(ref, Supabase.instance.client));
+  (ref) => OnlineMatchNotifier(ref, _safeSupabaseClient()),
+);
 
 class OnlineMatchNotifier extends StateNotifier<OnlineMatchState> {
   OnlineMatchNotifier(this.ref, this.supabase)
@@ -140,44 +151,80 @@ class OnlineMatchNotifier extends StateNotifier<OnlineMatchState> {
   }
 
   final Ref ref;
-  final SupabaseClient supabase;
+  final SupabaseClient? supabase;
   RealtimeChannel? _channel;
 
   void _initChannel() {
+    if (!isSupabaseConfigured || supabase == null) {
+      state = state.copyWith(
+        lobbyStatus: 'Online mode unavailable',
+        opponentStatus: 'Disconnected',
+        matchmakingNote: 'Add valid Supabase credentials in env.dart',
+        connected: false,
+      );
+      return;
+    }
+
     try {
-      _channel = supabase.channel('stone-paper-match');
+      _channel = supabase!.channel('stone-paper-match');
       _channel
           ?.on(
             RealtimeListenTypes.broadcast,
-            ChannelFilter(event: 'matchmaking'),
-            (payload, [ref]) {
-              _handleBroadcast(payload);
+            ChannelFilter(event: '*'),
+            (payload, [refData]) {
+              if (payload is Map<String, dynamic>) {
+                _handleBroadcast(payload);
+              }
             },
           )
-          .subscribe();
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!mounted) return;
-        state = state.copyWith(
-          lobbyStatus: 'Matchmaking ready',
-          matchmakingNote: 'Listening for an opponent',
-          connected: true,
-        );
-        _broadcast('match_found', {'source': 'local'});
-      });
-    } catch (error) {
+          .subscribe((status, [error]) {
+            if (!mounted) return;
+            if (status == 'SUBSCRIBED') {
+              state = state.copyWith(
+                lobbyStatus: 'Matchmaking ready',
+                opponentStatus: 'Connected',
+                matchmakingNote: 'Listening for opponent move',
+                connected: true,
+              );
+              _broadcast('match_found', {'source': 'local'});
+              return;
+            }
+            if (status == 'TIMED_OUT') {
+              state = state.copyWith(
+                lobbyStatus: 'Realtime timed out',
+                opponentStatus: 'Disconnected',
+                matchmakingNote: 'Retrying connection...',
+                connected: false,
+              );
+              return;
+            }
+            if (status == 'CHANNEL_ERROR') {
+              state = state.copyWith(
+                lobbyStatus: 'Connection error',
+                opponentStatus: 'Disconnected',
+                matchmakingNote: 'Supabase channel error: ${error ?? 'unknown'}',
+                connected: false,
+              );
+            }
+          });
+    } catch (_) {
       state = state.copyWith(
         lobbyStatus: 'Connection error',
-        matchmakingNote: 'Unable to reach Supabase',
+        opponentStatus: 'Disconnected',
+        matchmakingNote: 'Failed to initialize realtime channel',
         connected: false,
       );
     }
   }
 
   void selectMove(GameMove move) {
-    if (state.busy) return;
+    if (!state.connected || state.busy) return;
+
     final opponent = GameMove.values
-        .firstWhere((value) => value != move,
-            orElse: () => GameMove.values.first)
+        .firstWhere(
+          (value) => value != move,
+          orElse: () => GameMove.values.first,
+        )
         .nextRandom();
     final outcome = determineOutcome(move, opponent);
     final result = GameResult(
@@ -191,7 +238,7 @@ class OnlineMatchNotifier extends StateNotifier<OnlineMatchState> {
     state = state.copyWith(
       busy: true,
       opponentStatus: 'Result ready',
-      lobbyStatus: 'Result pending confirmation',
+      lobbyStatus: 'Resolving match...',
       lastResult: result,
     );
 
@@ -210,8 +257,23 @@ class OnlineMatchNotifier extends StateNotifier<OnlineMatchState> {
     });
   }
 
-  void _handleBroadcast(Map<String, dynamic> payload) {
-    final type = payload['type']?.toString().toLowerCase();
+  Map<String, dynamic> _normalizeBroadcastPayload(Map<String, dynamic> raw) {
+    final nestedPayload = raw['payload'];
+    if (nestedPayload is Map<String, dynamic>) {
+      return {
+        ...nestedPayload,
+        'event': raw['event'] ?? nestedPayload['event'],
+        'type': nestedPayload['type'] ?? raw['event'],
+      };
+    }
+    return raw;
+  }
+
+  void _handleBroadcast(Map<String, dynamic> rawPayload) {
+    final payload = _normalizeBroadcastPayload(rawPayload);
+    final type = (payload['type'] ?? payload['event'])?.toString().toLowerCase();
+    if (type == null) return;
+
     if (type == 'match_found') {
       state = state.copyWith(
         opponentStatus: 'Connected',
@@ -220,6 +282,7 @@ class OnlineMatchNotifier extends StateNotifier<OnlineMatchState> {
       );
       return;
     }
+
     if (type == 'match_result') {
       final result = GameResult.fromPayload(payload);
       state = state.copyWith(
@@ -234,11 +297,18 @@ class OnlineMatchNotifier extends StateNotifier<OnlineMatchState> {
 
   Future<void> _broadcast(String event, Map<String, dynamic> payload) async {
     if (_channel == null) return;
-    await _channel!.send(
-      type: RealtimeListenTypes.broadcast,
-      event: event,
-      payload: payload,
-    );
+    try {
+      await _channel!.send(
+        type: RealtimeListenTypes.broadcast,
+        event: event,
+        payload: payload,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      state = state.copyWith(
+        matchmakingNote: 'Broadcast failed. Check network/connectivity.',
+      );
+    }
   }
 
   @override

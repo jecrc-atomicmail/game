@@ -1,5 +1,6 @@
 import 'package:clerk_flutter/clerk_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:game/config/env.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
@@ -8,6 +9,7 @@ class LoginScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isConfigured = isClerkConfigured;
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -37,10 +39,24 @@ class LoginScreen extends StatelessWidget {
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 32),
-                const SizedBox(
-                  height: 420,
-                  child: ClerkAuthentication(),
-                ),
+                if (isConfigured)
+                  const SizedBox(
+                    height: 420,
+                    child: ClerkAuthentication(),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: const Text(
+                      'Clerk is not configured. Add a real publishable key in lib/config/env.dart.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
               ],
             ),
           ),

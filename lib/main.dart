@@ -20,10 +20,16 @@ final _clerkConfig = ClerkAuthConfig(
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: supabaseUrl,
-    anonKey: supabaseAnonKey,
-  );
+  if (isSupabaseConfigured) {
+    try {
+      await Supabase.initialize(
+        url: supabaseUrl,
+        anonKey: supabaseAnonKey,
+      );
+    } catch (_) {
+      // Continue in offline-only mode when Supabase init fails.
+    }
+  }
   runApp(const ProviderScope(child: AppEntry()));
 }
 

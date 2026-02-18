@@ -81,7 +81,7 @@ class OnlineGameScreen extends ConsumerWidget {
                       child: MoveChoiceCard(
                         move: move,
                         selected: false,
-                        disabled: state.busy,
+                        disabled: state.busy || !state.connected,
                         onTap: () =>
                             ref.read(onlineMatchProvider.notifier).selectMove(move),
                       ),
